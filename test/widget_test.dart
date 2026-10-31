@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:universal_ble/universal_ble.dart';
 import 'package:wawacell_flutter/ble_connection.dart';
+import 'package:wawacell_flutter/ble_device_picker_dialog.dart';
 import 'package:wawacell_flutter/force_format.dart';
 import 'package:wawacell_flutter/main.dart';
 
@@ -38,6 +41,49 @@ void main() {
       () => decodeLoadCellMeasurement(Uint8List.fromList([0x00, 0x00])),
       throwsFormatException,
     );
+  });
+
+  testWidgets('custom Bluetooth picker lists and returns discovered devices', (
+    tester,
+  ) async {
+    final devices = StreamController<BleDevice>.broadcast();
+    BleDevice? selectedDevice;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () async {
+                selectedDevice = await showDialog<BleDevice>(
+                  context: context,
+                  builder: (context) => BleDevicePickerDialog(
+                    devices: devices.stream,
+                    initialDevices: const [],
+                  ),
+                );
+              },
+              child: const Text('Open picker'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open picker'));
+    await tester.pump();
+    expect(find.text('Searching for WawaCell...'), findsOneWidget);
+
+    devices.add(
+      BleDevice(deviceId: 'wawacell-device', name: 'WawaCell V0.1', rssi: -42),
+    );
+    await tester.pump();
+    expect(find.text('WawaCell V0.1'), findsOneWidget);
+
+    await tester.tap(find.text('WawaCell V0.1'));
+    await tester.pumpAndSettle();
+    expect(selectedDevice?.deviceId, 'wawacell-device');
+    await devices.close();
   });
 
   testWidgets('shows the tabbed WawaCell live panel', (tester) async {

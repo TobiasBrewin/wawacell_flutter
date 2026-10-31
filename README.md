@@ -16,6 +16,10 @@ Web Bluetooth requires a supported browser (for example, Chrome or Edge) and a
 secure context such as HTTPS or localhost. Browser Bluetooth support and
 permissions vary; iOS Safari does not provide Web Bluetooth.
 
-To test with the physical load cell, power on the WawaCell device, allow the
-requested Bluetooth permissions, and tap **CONNECT**. The device must be
-advertising the existing WawaCell service.
+In the installed iOS app, tap **CONNECT** to open the in-app Bluetooth picker.
+It lists nearby devices advertising the WawaCell service; select one to
+connect. Each connection attempt performs a fresh scan.
+
+On other platforms, tap **CONNECT** and follow the browser picker or allow the
+requested Bluetooth permissions. The device must be advertising the existing
+WawaCell service.

@@ -3,8 +3,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 import 'ble_connection.dart';
+import 'ble_device_picker_dialog.dart';
 import 'force_format.dart';
 
 const _backgroundColor = Color(0xFF080B10);
@@ -152,6 +154,13 @@ class _WawaCellPanelState extends State<WawaCellPanel> {
         });
       },
       onError: _showBleError,
+      onSelectDevice: (devices, initialDevices) => showDialog<BleDevice>(
+        context: context,
+        builder: (context) => BleDevicePickerDialog(
+          devices: devices,
+          initialDevices: initialDevices,
+        ),
+      ),
     );
   }
 

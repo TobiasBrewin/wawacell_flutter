@@ -3,6 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:universal_ble/universal_ble.dart';
 
+typedef BleDevicePicker = Future<BleDevice?> Function(
+  Stream<BleDevice> devices,
+  List<BleDevice> initialDevices,
+);
+
 class BleConnection {
   BleConnection({
     required this.onStatusChanged,
@@ -10,6 +15,7 @@ class BleConnection {
     required this.onDisconnected,
     required this.onMeasurement,
     required this.onError,
+    required this.onSelectDevice,
   });
 
   static const serviceUuid = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
@@ -20,12 +26,17 @@ class BleConnection {
   final VoidCallback onDisconnected;
   final ValueChanged<double> onMeasurement;
   final ValueChanged<Object> onError;
+  final BleDevicePicker onSelectDevice;
 
   StreamSubscription<BleDevice>? _scanSubscription;
   StreamSubscription<bool>? _connectionSubscription;
   StreamSubscription<Uint8List>? _valueSubscription;
+  final StreamController<BleDevice> _discoveredDevices =
+      StreamController<BleDevice>.broadcast();
+  final Map<String, BleDevice> _devicesById = {};
   String? _deviceId;
   bool _isConnecting = false;
+  bool _isSelectingDevice = false;
   bool _manualDisconnect = false;
 
   Future<void> connect() async {
@@ -33,6 +44,33 @@ class BleConnection {
     _isConnecting = true;
 
     try {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        await UniversalBle.requestPermissions();
+        _devicesById.clear();
+        _isSelectingDevice = true;
+        _scanSubscription ??= UniversalBle.scanStream.listen(
+          _onScanResult,
+          onError: (Object error) => _fail(error),
+        );
+        await UniversalBle.startScan(
+          scanFilter: ScanFilter(withServices: [serviceUuid]),
+          skipDuplicates: true,
+        );
+        final device = await onSelectDevice(
+          _discoveredDevices.stream,
+          List.unmodifiable(_devicesById.values),
+        );
+        _isSelectingDevice = false;
+        await _stopScan();
+        if (device == null) {
+          _isConnecting = false;
+          onDisconnected();
+          return;
+        }
+        await _connectToDevice(device.deviceId);
+        return;
+      }
+
       if (!kIsWeb) {
         await UniversalBle.requestPermissions();
       }
@@ -45,6 +83,7 @@ class BleConnection {
         skipDuplicates: true,
       );
     } on Object catch (error) {
+      _isSelectingDevice = false;
       _isConnecting = false;
       await _stopScan();
       onDisconnected();
@@ -53,7 +92,13 @@ class BleConnection {
   }
 
   void _onScanResult(BleDevice device) {
-    if (!_isConnecting || _deviceId != null) return;
+    if (!_isConnecting) return;
+    if (_isSelectingDevice) {
+      _devicesById[device.deviceId] = device;
+      _discoveredDevices.add(device);
+      return;
+    }
+    if (_deviceId != null) return;
     unawaited(_connectToDevice(device.deviceId));
   }
 
@@ -78,6 +123,7 @@ class BleConnection {
         timeout: const Duration(seconds: 20),
       );
       linkEstablished = true;
+      await UniversalBle.discoverServices(deviceId);
       _valueSubscription = UniversalBle.characteristicValueStream(
         deviceId,
         characteristicUuid,
@@ -114,6 +160,10 @@ class BleConnection {
     final deviceId = _deviceId;
     if (deviceId == null) {
       _isConnecting = false;
+      if (_isSelectingDevice) {
+        _discoveredDevices.addError(error);
+        _isSelectingDevice = false;
+      }
       await _stopScan();
       onDisconnected();
       onError(error);
@@ -125,6 +175,7 @@ class BleConnection {
   Future<void> _failConnection(String deviceId, Object error) async {
     _isConnecting = false;
     _manualDisconnect = true;
+    _isSelectingDevice = false;
     await _stopScan();
     try {
       await UniversalBle.disconnect(deviceId);
@@ -144,7 +195,6 @@ class BleConnection {
     await _stopScan();
     Object? unsubscribeError;
     Object? disconnectError;
-
     if (deviceId != null) {
       try {
         await UniversalBle.unsubscribe(
@@ -216,6 +266,7 @@ class BleConnection {
     }
     await _scanSubscription?.cancel();
     await _cancelDeviceSubscriptions();
+    await _discoveredDevices.close();
   }
 }
 
